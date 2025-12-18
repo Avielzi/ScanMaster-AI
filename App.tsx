@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import ReceiptUploader from './components/ReceiptUploader';
 import ResultView from './components/ResultView';
 import CameraCapture from './components/CameraCapture';
@@ -12,6 +12,29 @@ const App: React.FC = () => {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [hasKey, setHasKey] = useState<boolean | null>(null);
+
+  // Check if API key is selected on mount
+  useEffect(() => {
+    const checkKey = async () => {
+      if (typeof (window as any).aistudio?.hasSelectedApiKey === 'function') {
+        const selected = await (window as any).aistudio.hasSelectedApiKey();
+        setHasKey(selected);
+      } else {
+        // Fallback for environments without the aistudio global
+        setHasKey(true);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleSelectKey = async () => {
+    if (typeof (window as any).aistudio?.openSelectKey === 'function') {
+      await (window as any).aistudio.openSelectKey();
+      // Assume success after triggering the dialog to avoid race conditions
+      setHasKey(true);
+    }
+  };
 
   const handleProcessImages = async (base64Array: string[]) => {
     setIsProcessing(true);
@@ -22,9 +45,17 @@ const App: React.FC = () => {
       setImages(base64Array);
       const markdown = await processReceipts(base64Array);
       setResult(markdown);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError('חלה שגיאה בעיבוד התמונות. אנא וודאו שחיבור האינטרנט יציב ונסו שוב.');
+      const errorMessage = err.message || '';
+      
+      // Handle the specific "Requested entity was not found" error
+      if (errorMessage.includes("Requested entity was not found")) {
+        setError('פרויקט ה-API לא נמצא או שאינו מוגדר לחיוב. אנא בחרו מפתח מפרויקט פעיל.');
+        setHasKey(false); // Prompt for key selection again
+      } else {
+        setError('חלה שגיאה בעיבוד התמונות. אנא וודאו שחיבור האינטרנט יציב ונסו שוב.');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -60,6 +91,55 @@ const App: React.FC = () => {
     setError(null);
   };
 
+  // API Key Gate View
+  if (hasKey === false) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-right" dir="rtl">
+        <div className="max-w-xl w-full glass-morphism p-12 rounded-[3rem] shadow-2xl border border-white/10 animate-slide-up">
+          <div className="bg-blue-600 w-20 h-20 rounded-3xl flex items-center justify-center mb-10 shadow-xl shadow-blue-500/20">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+            </svg>
+          </div>
+          <h2 className="text-4xl font-black text-slate-900 mb-6 tracking-tight">הגדרת חשבון ScanMaster</h2>
+          <p className="text-xl text-slate-600 font-medium mb-10 leading-relaxed">
+            כדי ליהנות מביצועי ה-AI המתקדמים ביותר, עליך לחבר מפתח API אישי. המפתח מאפשר לך שליטה מלאה על המכסות והפרטיות שלך.
+          </p>
+          
+          <div className="space-y-4">
+            <button 
+              onClick={handleSelectKey}
+              className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xl hover:bg-black transition-all shadow-xl shadow-slate-200 active:scale-95"
+            >
+              התחבר עם מפתח API
+            </button>
+            <a 
+              href="https://ai.google.dev/gemini-api/docs/billing" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="block text-center text-blue-600 font-bold hover:underline"
+            >
+              למידע נוסף על הגדרת חשבון וחיוב
+            </a>
+          </div>
+          
+          <p className="mt-12 text-slate-400 text-sm font-medium">
+            * המערכת דורשת פרויקט Google Cloud עם תוכנית חיוב פעילה (Pay-as-you-go).
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Loading state for the key check
+  if (hasKey === null) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen pb-32">
       {showCamera && (
@@ -81,10 +161,13 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-black text-slate-900 tracking-tighter">ScanMaster <span className="text-blue-600">AI</span></h1>
           </div>
           <div className="flex items-center gap-6">
-             <div className="hidden md:flex items-center gap-2.5 bg-blue-50 px-4 py-1.5 rounded-full border border-blue-100 shadow-sm">
+             <button 
+               onClick={handleSelectKey}
+               className="hidden md:flex items-center gap-2.5 bg-blue-50 px-4 py-1.5 rounded-full border border-blue-100 shadow-sm hover:bg-blue-100 transition-colors"
+             >
                 <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                 <span className="text-[11px] font-black text-blue-700 uppercase tracking-widest">Premium Active</span>
-             </div>
+             </button>
           </div>
         </div>
       </header>

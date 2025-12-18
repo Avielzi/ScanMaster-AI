@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 
 interface ResultViewProps {
   markdown: string;
@@ -12,17 +12,17 @@ const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googlea
 
 const getCategoryStyles = (category: string) => {
   const styles: Record<string, string> = {
-    'מזון ואירוח': 'bg-orange-50 text-orange-700 border-orange-100',
-    'תחבורה ודלק': 'bg-blue-50 text-blue-700 border-blue-100',
-    'ציוד ומכשור': 'bg-purple-50 text-purple-700 border-purple-100',
-    'תקשורת ומחשוב': 'bg-cyan-50 text-cyan-700 border-cyan-100',
-    'תחזוקה ומשרד': 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    'טיסות ולינה': 'bg-indigo-50 text-indigo-700 border-indigo-100',
-    'שירותים מקצועיים': 'bg-slate-100 text-slate-700 border-slate-200',
-    'שיווק ופרסום': 'bg-rose-50 text-rose-700 border-rose-100',
-    'אחר': 'bg-gray-100 text-gray-600 border-gray-200'
+    'מזון ואירוח': 'bg-orange-50 text-orange-700 border-orange-100 fill-orange-500',
+    'תחבורה ודלק': 'bg-blue-50 text-blue-700 border-blue-100 fill-blue-500',
+    'ציוד ומכשור': 'bg-purple-50 text-purple-700 border-purple-100 fill-purple-500',
+    'תקשורת ומחשוב': 'bg-cyan-50 text-cyan-700 border-cyan-100 fill-cyan-500',
+    'תחזוקה ומשרד': 'bg-emerald-50 text-emerald-700 border-emerald-100 fill-emerald-500',
+    'טיסות ולינה': 'bg-indigo-50 text-indigo-700 border-indigo-100 fill-indigo-500',
+    'שירותים מקצועיים': 'bg-slate-100 text-slate-700 border-slate-200 fill-slate-500',
+    'שיווק ופרסום': 'bg-rose-50 text-rose-700 border-rose-100 fill-rose-500',
+    'אחר': 'bg-gray-100 text-gray-600 border-gray-200 fill-gray-500'
   };
-  return styles[category.trim()] || 'bg-slate-50 text-slate-600 border-slate-100';
+  return styles[category.trim()] || 'bg-slate-50 text-slate-600 border-slate-100 fill-slate-400';
 };
 
 const Lightbox: React.FC<{ imageUrl: string; onClose: () => void }> = ({ imageUrl, onClose }) => {
@@ -116,11 +116,37 @@ const ResultView: React.FC<ResultViewProps> = ({ markdown, images, onClear }) =>
   const [showImages, setShowImages] = useState(true);
   const [activeImage, setActiveImage] = useState<string | null>(null);
 
-  const parseTableData = () => {
+  const { dataRows, summaryRows, categoryTotals } = useMemo(() => {
     const lines = markdown.trim().split('\n');
-    const dataRows: string[][] = [];
-    const summaryRows: string[] = [];
+    const dRows: string[][] = [];
+    const sRows: string[] = [];
+    const cTotals: Record<string, { total: number; count: number }> = {};
     
+    // Process markdown cards for totals
+    const blocks = markdown.split('---');
+    blocks.forEach(block => {
+      const bLines = block.trim().split('\n');
+      if (bLines.some(l => l.includes('📍'))) {
+        let category = 'אחר';
+        let amountStr = '0';
+        
+        bLines.forEach(l => {
+          if (l.includes('📁')) category = l.replace('📁 סוג הוצאה:', '').trim();
+          if (l.includes('💰')) {
+            // Extract the number inside parentheses (Converted Amount)
+            const match = l.match(/\(([\d.]+)\s*₪\)/);
+            if (match) amountStr = match[1];
+          }
+        });
+
+        const amount = parseFloat(amountStr) || 0;
+        if (!cTotals[category]) cTotals[category] = { total: 0, count: 0 };
+        cTotals[category].total += amount;
+        cTotals[category].count += 1;
+      }
+    });
+
+    // Process table lines
     lines.forEach(line => {
       const trimmed = line.trim();
       if (trimmed.startsWith('|') && trimmed.endsWith('|') && !trimmed.includes('---')) {
@@ -128,14 +154,14 @@ const ResultView: React.FC<ResultViewProps> = ({ markdown, images, onClear }) =>
           .split('|')
           .map(c => c.trim())
           .filter((_, i, arr) => i > 0 && i < arr.length - 1);
-        if (cells.length > 0) dataRows.push(cells);
+        if (cells.length > 0) dRows.push(cells);
       } else if (trimmed.startsWith('סה"כ')) {
-        summaryRows.push(trimmed);
+        sRows.push(trimmed);
       }
     });
 
-    return { dataRows, summaryRows };
-  };
+    return { dataRows: dRows, summaryRows: sRows, categoryTotals: cTotals };
+  }, [markdown]);
 
   const handleExportToSheets = async () => {
     if (!(window as any).google?.accounts?.oauth2) {
@@ -166,7 +192,6 @@ const ResultView: React.FC<ResultViewProps> = ({ markdown, images, onClear }) =>
 
   const createSpreadsheet = async (accessToken: string) => {
     setExportStep('יוצר גיליון חדש...');
-    const { dataRows, summaryRows } = parseTableData();
     if (dataRows.length === 0) return;
     const dateStr = new Date().toLocaleDateString('he-IL').replace(/\//g, '-');
     
@@ -237,7 +262,6 @@ const ResultView: React.FC<ResultViewProps> = ({ markdown, images, onClear }) =>
   };
 
   const downloadCSV = () => {
-    const { dataRows, summaryRows } = parseTableData();
     let csvContent = dataRows.map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n');
     if (summaryRows.length > 0) csvContent += '\n\n' + summaryRows.map(s => `"${s.replace(/"/g, '""')}"`).join('\n');
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -285,6 +309,21 @@ const ResultView: React.FC<ResultViewProps> = ({ markdown, images, onClear }) =>
             נקה
           </button>
         </div>
+      </div>
+
+      {/* Category Breakdown Header Section */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 px-2 overflow-x-auto pb-4 custom-scrollbar">
+        {/* Fix: Cast Object.entries to provide explicit typing for the category stats to resolve unknown property access errors */}
+        {(Object.entries(categoryTotals) as [string, { total: number; count: number }][]).sort((a, b) => b[1].total - a[1].total).map(([cat, stats]) => (
+          <div key={cat} className={`p-5 rounded-[2rem] border min-w-[200px] transition-all hover:scale-[1.03] shadow-sm ${getCategoryStyles(cat).split(' ').slice(0, 3).join(' ')}`}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-60">הוצאה לפי קטגוריה</span>
+              <span className="bg-white/50 px-2 py-0.5 rounded-full text-[10px] font-black">{stats.count} פריטים</span>
+            </div>
+            <h5 className="font-black text-lg mb-1">{cat}</h5>
+            <div className="text-2xl font-black tabular-nums">{stats.total.toLocaleString('he-IL', { style: 'currency', currency: 'ILS' })}</div>
+          </div>
+        ))}
       </div>
 
       <div className={`grid gap-8 ${showImages ? 'lg:grid-cols-[1fr_350px]' : 'grid-cols-1'}`}>

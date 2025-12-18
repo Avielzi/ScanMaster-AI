@@ -68,6 +68,8 @@ You must map every expense to EXACTLY ONE of these categories. Use the following
 סה"כ לתשלום (משוקלל בשקלים): [Total] ₪`;
 
 export const processReceipts = async (images: string[]): Promise<string> => {
+  // Always create a new instance right before the call to ensure fresh API key usage
+  // We use gemini-3-flash-preview as it is the most robust model for Free Tier usage.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const imageParts = images.map(img => ({
@@ -78,7 +80,7 @@ export const processReceipts = async (images: string[]): Promise<string> => {
   }));
 
   const response: GenerateContentResponse = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview', 
+    model: 'gemini-3-flash-preview', 
     contents: {
       parts: [
         ...imageParts,
@@ -87,7 +89,7 @@ export const processReceipts = async (images: string[]): Promise<string> => {
     },
     config: {
       systemInstruction: SYSTEM_INSTRUCTION,
-      temperature: 0.1, // Lower temperature for more deterministic categorization
+      temperature: 0.1,
     }
   });
 
