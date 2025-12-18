@@ -1,0 +1,7 @@
+{
+  "name": "Smart Ledger OCR - Accounting Assistant",
+  "description": "A professional accounting assistant that extracts data from multi-lingual receipts (Greek, English, etc.) and translates it into structured Hebrew markdown tables for easy financial tracking.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
