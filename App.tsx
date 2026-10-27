@@ -5,6 +5,7 @@ import ResultView from './components/ResultView';
 import CameraCapture from './components/CameraCapture';
 import FeatureSlider from './components/FeatureSlider';
 import { processReceipts } from './services/geminiService';
+import { getApiKey, saveApiKey } from './services/apiKey';
 
 const App: React.FC = () => {
   const [images, setImages] = useState<string[]>([]);
@@ -21,19 +22,32 @@ const App: React.FC = () => {
         const selected = await (window as any).aistudio.hasSelectedApiKey();
         setHasKey(selected);
       } else {
-        // Fallback for environments without the aistudio global
-        setHasKey(true);
+        // Outside AI Studio there is no host-provided key: the person enters
+        // their own (the build no longer carries one).
+        setHasKey(!!getApiKey());
       }
     };
     checkKey();
   }, []);
 
+  const inAiStudio = typeof (window as any).aistudio?.openSelectKey === 'function';
+  const [keyInput, setKeyInput] = useState('');
+
   const handleSelectKey = async () => {
-    if (typeof (window as any).aistudio?.openSelectKey === 'function') {
+    if (inAiStudio) {
       await (window as any).aistudio.openSelectKey();
       // Assume success after triggering the dialog to avoid race conditions
       setHasKey(true);
+    } else {
+      setHasKey(false); // show the key form
     }
+  };
+
+  const handleSaveKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveApiKey(keyInput);
+    setKeyInput('');
+    setHasKey(!!getApiKey());
   };
 
   const handleProcessImages = async (base64Array: string[]) => {
@@ -49,8 +63,11 @@ const App: React.FC = () => {
       console.error(err);
       const errorMessage = err.message || '';
       
+      if (errorMessage === "MISSING_API_KEY") {
+        setError('לא הוגדר מפתח API. יש לחבר מפתח אישי כדי לסרוק.');
+        setHasKey(false);
       // Handle the specific "Requested entity was not found" error
-      if (errorMessage.includes("Requested entity was not found")) {
+      } else if (errorMessage.includes("Requested entity was not found")) {
         setError('פרויקט ה-API לא נמצא או שאינו מוגדר לחיוב. אנא בחרו מפתח מפרויקט פעיל.');
         setHasKey(false); // Prompt for key selection again
       } else {
@@ -107,12 +124,37 @@ const App: React.FC = () => {
           </p>
           
           <div className="space-y-4">
-            <button 
-              onClick={handleSelectKey}
-              className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xl hover:bg-black transition-all shadow-xl shadow-slate-200 active:scale-95"
-            >
-              התחבר עם מפתח API
-            </button>
+            {inAiStudio ? (
+              <button
+                onClick={handleSelectKey}
+                className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xl hover:bg-black transition-all shadow-xl shadow-slate-200 active:scale-95"
+              >
+                התחבר עם מפתח API
+              </button>
+            ) : (
+              <form onSubmit={handleSaveKey} className="space-y-4">
+                <label htmlFor="gemini-key" className="block text-slate-700 font-bold">מפתח Gemini API</label>
+                <input
+                  id="gemini-key"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  dir="ltr"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder="AIza..."
+                  className="w-full border border-slate-300 rounded-2xl px-5 py-4 text-lg text-slate-900"
+                />
+                <button
+                  type="submit"
+                  disabled={!keyInput.trim()}
+                  className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xl hover:bg-black transition-all shadow-xl shadow-slate-200 active:scale-95 disabled:opacity-50"
+                >
+                  שמירת המפתח והמשך
+                </button>
+                <p className="text-slate-500 text-sm">המפתח נשמר רק בדפדפן הזה ונשלח רק ל-Google.</p>
+              </form>
+            )}
             <a 
               href="https://ai.google.dev/gemini-api/docs/billing" 
               target="_blank" 
