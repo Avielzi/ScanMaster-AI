@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { getApiKey } from "./apiKey";
 
 const SYSTEM_INSTRUCTION = `You are "ScanMaster AI" - A world-class expense intelligence engine. Your specialty is multi-lingual OCR, automated accounting categorization, and financial data normalization.
 
@@ -70,7 +71,9 @@ You must map every expense to EXACTLY ONE of these categories. Use the following
 export const processReceipts = async (images: string[]): Promise<string> => {
   // Always create a new instance right before the call to ensure fresh API key usage
   // We use gemini-3-flash-preview as it is the most robust model for Free Tier usage.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("MISSING_API_KEY");
+  const ai = new GoogleGenAI({ apiKey });
   
   const imageParts = images.map(img => ({
     inlineData: {
